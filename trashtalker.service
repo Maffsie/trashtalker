@@ -1,0 +1,16 @@
+[Unit]
+Description=TrashTalker
+Wants=network.target
+After=network.target
+
+[Service]
+KillMode=process
+Type=simple
+NotifyAccess=all
+LimitNOFILE=8192
+ExecStart=/usr/local/bin/trashtalker.py
+Restart=on-failure
+User=nobody
+
+[Install]
+WantedBy=multi-user.target
