@@ -1,9 +1,9 @@
 $basepath="."
 $in_put="$basepath/Input"
 $output="$basepath/Output"
-$ffmpeg=Get-Command ffmpeg
+$ffmpeg=Get-Command -ErrorAction SilentlyContinue ffmpeg
 if ($ffmpeg -eq $null) {
-	$ffmpeg="$basepath/ffmpeg.exe"
+	$ffmpeg="$basepath/ffmpeg"
 }
 $toconvert=Get-ChildItem "$in_put/"
 $toconvert|%{
