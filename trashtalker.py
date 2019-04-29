@@ -7,22 +7,29 @@ from signal import signal, SIGTERM
 from random import shuffle
 
 ## NOTE:
-## This library uses the PJSUA library which is officially deprecated
-## The reason for this is that I couldn't get this to work with equivalent
-##   code for PJSUA2.
-## At time of publishing, the only library version of pjsua available
-##   in the repos for Debian 9 is the deprecated PJSUA (python-pjsua)
-## Please also be aware that, by default, playlist length is limited
-##   to 64 items. I can find no reason for this limitation, and it is
-##   specific to the python bindings for the PJSUA library.
-## If you'd like to have a playlist longer than 64 items, you will need to
-##   recompile python-pjsua with the appropriate adjustment to _pjsua.c line 2515
+## This script is designed to run either on the same machine or firewalled/segregated network segment
+##   as the telephony appliance(s) that will use it. While there should be no security risk to doing so,
+##   you should not have the SIP endpoint exposed by this application reachable on the public internet.
+## This script should be configured to run automatically, and your telephony appliance should be configured
+##   to treat it as a no-authentication or "IP-based authentication" SIP trunk. Any number or name will
+##   be recognised and answered automatically by this script.
 ##
-## If you can get this working using PJSUA2, a pull request would be greatly
-##   appreciated.
+## This script uses the PJSUA library which is officially deprecated
+## The reason for this is that I couldn't get this to work with equivalent code for PJSUA2.
+## At time of publishing, the only library version of pjsua available in the repos for Debian 9
+##   is the deprecated PJSUA (python-pjsua)
+## Please also be aware that, by default, playlist length is limited to 64 items. I can find no reason
+##   for this limitation, and it is specific to the python bindings for the PJSUA library.
+## If you'd like to have a playlist longer than 64 items, you will need to recompile python-pjsua
+##   with the appropriate adjustment to _pjsua.c line 2515
+##
+## If you can get this working using PJSUA2, a pull request would be greatly appreciated.
 
 # Configuration
 LOG_LEVEL=0
+# You can have multiple copies of this script serving different playlists by simply duplicating it
+#   ensuring you change the sourcepath and sipport accordingly.
+#TODO: make this configurable via a standard config file.
 sourcepath="/opt/media/"
 sipport=5062
 # End configuration
@@ -78,6 +85,7 @@ class CallCb(pj.CallCallback):
 				loop=True, filelist=self.playlist, label="trashtalklist")
 			self.playlistslot=pj.Lib.instance().playlist_get_slot(self.playlist_instance)
 			olog(4, "event-call-state-early", "initialised new trashtalk playlist instance")
+			#answer the call once playlist is prepared
 			self.call.answer(SIPStates.answer)
 		elif self.call.info().state == pj.CallState.CONFIRMED:
 			olog(3, "event-call-state-confirmed", "answered call")
