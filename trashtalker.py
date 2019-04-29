@@ -75,6 +75,7 @@ class CallCb(pj.CallCallback):
 			self.playlist_instance=pj.Lib.instance().create_playlist(
 				loop=True, filelist=self.playlist, label="trashtalklist")
 			self.playlistslot=pj.Lib.instance().playlist_get_slot(self.playlist_instance)
+			olog(4, "event-call-state-early", "initialised new trashtalk playlist instance")
 		elif self.call.info().state == pj.CallState.CONFIRMED:
 			olog(3, "event-call-state-confirmed", "answered call")
 			self.confslot=self.call.info().conf_slot
@@ -84,7 +85,7 @@ class CallCb(pj.CallCallback):
 			olog(3, "event-call-state-disconnected", "call disconnected")
 			pj.Lib.instance().conf_disconnect(self.playlistslot, self.confslot)
 			pj.Lib.instance().playlist_destroy(self.playlist_instance)
-			olog(3, "event-call-conf-left", "removed trashtalk from call and destroyed it")
+			olog(3, "event-call-conf-left", "removed trashtalk instance from call and destroyed it")
 
 	def on_media_state(self):
 		if self.call.info().media_state == pj.MediaState.ACTIVE:
