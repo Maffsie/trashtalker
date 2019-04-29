@@ -31,6 +31,7 @@ sipport=5062
 # logger functions
 def pjlog(level, str, len):
 	olog(level+1, "pjsip", str)
+#print() is used over bare print because pylint yells at me if I use bare print
 def elog(sev, source, line):
 	print("%s %s: %s" % ("!"*sev, source, line))
 	sys.stdout.flush()
@@ -38,8 +39,9 @@ def olog(sev, source, line):
 	print("%s %s: %s" % ("*"*sev, source, line))
 	sys.stdout.flush()
 #SIGTERM handler; could be expanded to handle SIGKILL, SIGHUP, SIGUSR1, etc.
-#Handling of SIGHUP or SIGUSR1 could be useful for "live" relaoding of playlist
+#TODO: handle SIGHUP or SIGUSR1 for live-relaoding playlist
 def sighandle(_signo, _stack_frame):
+	elog(1, "sighandler", "caught signal %s inside frame %s, closing main loop" % (_signo, _stack_frame))
 	global mainloop
 	mainloop=False
 	pass
@@ -56,9 +58,8 @@ class AccountCb(pj.AccountCallback):
 	def on_incoming_call(self, call):
 		olog(2, "event-call-in", "caller %s dialled in" % call.info().remote_uri)
 		call.set_callback(CallCb(call))
+		#brief delay between ringing and connected means we can do playlist setup without a period of silence
 		call.answer(SIPStates.ringing)
-		sleep(0.3)
-		call.answer(SIPStates.answer)
 # Call Callback class
 class CallCb(pj.CallCallback):
 	def __init__(self, call=None):
@@ -68,6 +69,7 @@ class CallCb(pj.CallCallback):
 		olog(3, "event-state-change", "SIP/2.0 %s (%s), call %s in call with party %s" % 
 			(self.call.info().last_code, self.call.info().last_reason,
 			self.call.info().state_text, self.call.info().remote_uri))
+		#call states not handled so far: CONNECTING
 		if self.call.info().state == pj.CallState.EARLY:
 			global files
 			self.playlist=files
@@ -76,6 +78,7 @@ class CallCb(pj.CallCallback):
 				loop=True, filelist=self.playlist, label="trashtalklist")
 			self.playlistslot=pj.Lib.instance().playlist_get_slot(self.playlist_instance)
 			olog(4, "event-call-state-early", "initialised new trashtalk playlist instance")
+			self.call.answer(SIPStates.answer)
 		elif self.call.info().state == pj.CallState.CONFIRMED:
 			olog(3, "event-call-state-confirmed", "answered call")
 			self.confslot=self.call.info().conf_slot
@@ -99,6 +102,7 @@ def PjInit():
 	global LOG_LEVEL
 	lib=pj.Lib()
 	cfg_ua=pj.UAConfig()
+	#TODO: make max_calls configurable?
 	cfg_ua.max_calls=32
 	cfg_ua.user_agent="TrashTalker/1.0"
 	cfg_media=pj.MediaConfig()
