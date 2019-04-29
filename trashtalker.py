@@ -131,11 +131,15 @@ def PjDeinit():
 	global sipport
 	global lib
 	lib.hangup_all()
-	acct.delete()
-	lib.destroy()
-	acct=None
-	transport=None
-	lib=None
+	try:
+		acct.delete()
+		lib.destroy()
+		acct=None
+		transport=None
+		lib=None
+	except AttributeError:
+		elog(1, "deinit", "AttributeError when clearing down pjsip, this is likely fine")
+		pass
 
 
 
