@@ -176,6 +176,9 @@ def main():
 		elog(1, "pjsip-error", "trashtalker encountered pjsip exception %s" % str(e))
 		mainloop=False
 		pass
+	except KeyboardInterrupt:
+		mainloop=False
+		pass
 	olog(1, "deinit", "main loop exited, shutting down")
 	PjDeinit()
 	olog(1, "deinit-complete", "trashtalker has shut down")
