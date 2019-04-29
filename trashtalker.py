@@ -37,8 +37,8 @@ def elog(sev, source, line):
 def olog(sev, source, line):
 	print("%s %s: %s" % ("*"*sev, source, line))
 	sys.stdout.flush()
-
-
+#SIGTERM handler; could be expanded to handle SIGKILL, SIGHUP, SIGUSR1, etc.
+#Handling of SIGHUP or SIGUSR1 could be useful for "live" relaoding of playlist
 def sighandle(_signo, _stack_frame):
 	global mainloop
 	mainloop=False
@@ -48,18 +48,18 @@ def sighandle(_signo, _stack_frame):
 class SIPStates:
 	ringing=180
 	answer=200
-
+# Account Callback class
 class AccountCb(pj.AccountCallback):
 	def __init__(self, account=None):
 		pj.AccountCallback.__init__(self, account)
-	
+
 	def on_incoming_call(self, call):
 		olog(2, "event-call-in", "caller %s dialled in" % call.info().remote_uri)
 		call.set_callback(CallCb(call))
 		call.answer(SIPStates.ringing)
 		sleep(0.3)
 		call.answer(SIPStates.answer)
-
+# Call Callback class
 class CallCb(pj.CallCallback):
 	def __init__(self, call=None):
 		pj.CallCallback.__init__(self, call)
@@ -131,17 +131,20 @@ def PjDeinit():
 	global sipport
 	global lib
 	lib.hangup_all()
+	# allow time for cleanup before destroying objects
+	lib.handle_events(timeout=250)
 	try:
-		lib.destroy()
 		acct.delete()
+		lib.destroy()
 		lib=None
-		transport=None
 		acct=None
+		transport=None
 	except AttributeError:
 		elog(1, "deinit", "AttributeError when clearing down pjsip, this is likely fine")
 		pass
-
-
+	except pj.Error as e:
+		elog(1, "deinit", "pjsip error when clearing down: %s" % str(e))
+		pass
 
 def main():
 	olog(1, "init", "initialising trashtalker")
