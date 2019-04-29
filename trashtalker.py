@@ -22,7 +22,7 @@ from random import shuffle
 ##   appreciated.
 
 # Configuration
-LOG_LEVEL=1
+LOG_LEVEL=0
 sourcepath="/opt/media/"
 sipport=5062
 # End configuration
@@ -132,11 +132,11 @@ def PjDeinit():
 	global lib
 	lib.hangup_all()
 	try:
-		acct.delete()
 		lib.destroy()
-		acct=None
-		transport=None
+		acct.delete()
 		lib=None
+		transport=None
+		acct=None
 	except AttributeError:
 		elog(1, "deinit", "AttributeError when clearing down pjsip, this is likely fine")
 		pass
