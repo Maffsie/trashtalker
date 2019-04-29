@@ -1,4 +1,3 @@
-#!/usr/bin/python2.7
 import sys
 import pjsua as pj
 from time import sleep
@@ -68,15 +67,16 @@ class CallCb(pj.CallCallback):
 		olog(3, "event-state-change", "SIP/2.0 %s (%s), call %s in call with party %s" % 
 			(self.call.info().last_code, self.call.info().last_reason,
 			self.call.info().state_text, self.call.info().remote_uri))
-		if self.call.info().state == pj.CallState.CONFIRMED:
+		if self.call.info().state == pj.CallState.EARLY:
 			global files
 			self.playlist=files
 			shuffle(self.playlist)
-			olog(3, "event-call-state-confirmed", "answered call")
-			self.confslot=self.call.info().conf_slot
 			self.playlist_instance=pj.Lib.instance().create_playlist(
 				loop=True, filelist=self.playlist, label="trashtalklist")
 			self.playlistslot=pj.Lib.instance().playlist_get_slot(self.playlist_instance)
+		elif self.call.info().state == pj.CallState.CONFIRMED:
+			olog(3, "event-call-state-confirmed", "answered call")
+			self.confslot=self.call.info().conf_slot
 			pj.Lib.instance().conf_connect(self.playlistslot, self.confslot)
 			olog(3, "event-call-conf-joined", "joined trashtalk to call")
 		elif self.call.info().state == pj.CallState.DISCONNECTED:
@@ -110,16 +110,16 @@ def PjInit():
 def PjMediaInit():
 	global transport
 	global acct
+	global sipuri
 	global sipport
 	global lib
 	transport=lib.create_transport(pj.TransportType.UDP,
 		pj.TransportConfig(sipport))
-	acct=lib.create_account_for_transport(transport, cb=AccountCb)
+	acct=lib.create_account_for_transport(transport, cb=AccountCb())
+	sipuri="sip:%s:%s" % (transport.info().host, transport.info().port)
 
 def TrashTalkerInit():
 	global mainloop
-	global sipuri
-	sipuri="sip:%s:%s" % (transport.info().host, transport.info().port)
 	while mainloop:
 		sleep(0.2)
 
@@ -140,10 +140,11 @@ def PjDeinit():
 def main():
 	olog(1, "init", "initialising trashtalker")
 	global mainloop
+	global files
+	global sipuri
 	mainloop=True
 	signal(SIGTERM, sighandle)
 	try:
-		global files
 		files=listdir(sourcepath)
 		files[:]=[sourcepath+file for file in files]
 		assert (len(files) > 1), "Playlist path must contain more than one audio file"
