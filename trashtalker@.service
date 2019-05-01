@@ -1,5 +1,5 @@
 [Unit]
-Description=TrashTalker
+Description=TrashTalker (%i)
 Wants=network.target
 After=network.target
 
@@ -8,6 +8,7 @@ KillMode=process
 Type=simple
 NotifyAccess=all
 LimitNOFILE=8192
+EnvironmentFile=/opt/.tt/%i.conf
 ExecStart=/usr/local/bin/trashtalker.py
 Restart=on-failure
 User=nobody
