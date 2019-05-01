@@ -27,11 +27,9 @@ from random import shuffle
 
 # Configuration
 LOG_LEVEL=0
-# You can have multiple copies of this script serving different playlists by simply duplicating it
-#   ensuring you change the sourcepath and sipport accordingly.
-#TODO: make this configurable via a standard config file.
+#TT_MEDIA_SOURCE and TT_LISTEN_PORT can be configured via env. variables
 sourcepath=getenv('TT_MEDIA_SOURCE', '/opt/media/')
-sipport=getenv('TT_LISTEN_PORT', 5062)
+sipport=int(getenv('TT_LISTEN_PORT', 5062))
 # End configuration
 
 # Application scaffolding
