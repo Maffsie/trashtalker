@@ -3,7 +3,7 @@ import sys
 import pjsua as pj
 from time import sleep
 from os import listdir, getenv
-from signal import signal, SIGTERM
+from signal import signal, SIGHUP, SIGINT, SIGTERM
 from random import shuffle
 
 ## NOTE:
@@ -46,9 +46,20 @@ def olog(sev, source, line):
 #SIGTERM handler; could be expanded to handle SIGKILL, SIGHUP, SIGUSR1, etc.
 #TODO: handle SIGHUP or SIGUSR1 for live-relaoding playlist
 def sighandle(_signo, _stack_frame):
-	elog(1, "sighandler", "caught signal %s inside frame %s, closing main loop" % (_signo, _stack_frame))
 	global mainloop
-	mainloop=False
+	olog(1, "sighandler", "caught signal %s" % _signo)
+	if _signo == 1:
+		#SIGHUP
+		olog(1, "sighandler", "SIGHUP handled, reloading playlist")
+		loadplaylist()
+	elif _signo == 2:
+		#SIGINT
+		olog(1, "sighandler", "SIGINT handled, hanging up all calls")
+		pj.Lib.instance().hangup_all()
+	elif _signo == 15:
+		#SIGTERM
+		olog(1, "sighandler", "SIGTERM handled, closing main loop")
+		mainloop=False
 	pass
 
 # Classes
@@ -176,6 +187,8 @@ def main():
 	global sipuri
 	global sourcepath
 	mainloop=True
+	signal(SIGHUP, sighandle)
+	signal(SIGINT, sighandle)
 	signal(SIGTERM, sighandle)
 	assert sourcepath.startswith('/'), "Environment variable TT_MEDIA_PATH must be an absolute path!"
 	try:
