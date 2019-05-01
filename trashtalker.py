@@ -189,7 +189,7 @@ def main():
 	except:
 		elog(1, "pj-media-init", "Unable to initialise pjsip media or transport")
 		raise Exception("Unable to initialise pjsip media or transport")
-	olog(1, "init-complete", "trashtalker listening on uri %s" % sipuri)
+	olog(1, "init-complete", "trashtalker listening on uri %s and serving media from %s" % (sipuri, sourcepath))
 	try:
 		TrashTalkerInit()
 	except pj.Error as e:
