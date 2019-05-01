@@ -158,6 +158,19 @@ def PjDeinit():
 		elog(1, "deinit", "pjsip error when clearing down: %s" % str(e))
 		pass
 
+def loadplaylist():
+	olog(2, "playlist-load", "loading playlist files")
+	global sourcepath
+	if not sourcepath.endswith('/'):
+		olog(1, "playlist-load", "appending trailing / to TT_MEDIA_SOURCE")
+		sourcepath="%s/" % sourcepath
+	global files
+	files=listdir(sourcepath)
+	files[:]=[sourcepath+file for file in files]
+	assert (len(files) > 1), "playlist path %s must contain more than one audio file" % sourcepath
+	olog(1, "playlist-load",
+		"load playlist from %s, got %s files" % (sourcepath, len(files)))
+
 def main():
 	olog(1, "init", "initialising trashtalker")
 	global mainloop
@@ -168,14 +181,7 @@ def main():
 	signal(SIGTERM, sighandle)
 	assert sourcepath.startswith('/'), "Environment variable TT_MEDIA_PATH must be an absolute path!"
 	try:
-		if not sourcepath.endswith('/'):
-			olog(1, "playlist-load", "appending trailing / to TT_MEDIA_PATH")
-			sourcepath=''.join(sourcepath, '/')
-		files=listdir(sourcepath)
-		files[:]=[sourcepath+file for file in files]
-		assert (len(files) > 1), "Playlist path must contain more than one audio file"
-		olog(1, "playlist-load",
-			"load playlist from %s, got %s files" % (sourcepath, len(files)))
+		loadplaylist()
 	except:
 		elog(1, "playlist-load", "exception encountered while loading playlist from path %s" % sourcepath)
 		raise Exception("Unable to load playlist")
