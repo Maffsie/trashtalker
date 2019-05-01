@@ -2,7 +2,7 @@
 import sys
 import pjsua as pj
 from time import sleep
-from os import listdir
+from os import listdir, getenv
 from signal import signal, SIGTERM
 from random import shuffle
 
@@ -30,8 +30,8 @@ LOG_LEVEL=0
 # You can have multiple copies of this script serving different playlists by simply duplicating it
 #   ensuring you change the sourcepath and sipport accordingly.
 #TODO: make this configurable via a standard config file.
-sourcepath="/opt/media/"
-sipport=5062
+sourcepath=getenv('TT_MEDIA_SOURCE', '/opt/media/')
+sipport=getenv('TT_LISTEN_PORT', 5062)
 # End configuration
 
 # Application scaffolding
@@ -163,9 +163,14 @@ def main():
 	global mainloop
 	global files
 	global sipuri
+	global sourcepath
 	mainloop=True
 	signal(SIGTERM, sighandle)
+	assert sourcepath.startswith('/'), "Environment variable TT_MEDIA_PATH must be an absolute path!"
 	try:
+		if not sourcepath.endswith('/'):
+			olog(1, "playlist-load", "appending trailing / to TT_MEDIA_PATH")
+			sourcepath=''.join(sourcepath, '/')
 		files=listdir(sourcepath)
 		files[:]=[sourcepath+file for file in files]
 		assert (len(files) > 1), "Playlist path must contain more than one audio file"
