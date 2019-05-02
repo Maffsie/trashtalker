@@ -25,41 +25,45 @@ from random import shuffle
 ##
 ## If you can get this working using PJSUA2, a pull request would be greatly appreciated.
 
+# This feels real hacky but I'm not sure there's a better way of creating a generic object that
+#   you can add properties to.
+class State(object):
+	pass
+state=State()
+
 # Configuration
-LOG_LEVEL=0
+state.LOG_LEVEL=int(getenv('TT_LOG_LEVEL', 0))
 #TT_MEDIA_SOURCE and TT_LISTEN_PORT can be configured via env. variables
-sourcepath=getenv('TT_MEDIA_SOURCE', '/opt/media/')
-sipport=int(getenv('TT_LISTEN_PORT', 5062))
+state.source=getenv('TT_MEDIA_SOURCE', '/opt/media/')
+state.port=int(getenv('TT_LISTEN_PORT', 5062))
 # End configuration
 
 # Application scaffolding
 # logger functions
-def pjlog(level, str, len):
-	olog(level+1, "pjsip", str)
-#print() is used over bare print because pylint yells at me if I use bare print
-def elog(sev, source, line):
-	print("%s %s: %s" % ("!"*sev, source, line))
+def PJLog(level, line, length):
+	Log(level+1, "pjsip", line)
+def Log(level, source, line, error=False):
+	pfx='*'
+	if error:
+		pfx='!'
+	print("%s %s: %s" % (pfx*level, source, line))
 	sys.stdout.flush()
-def olog(sev, source, line):
-	print("%s %s: %s" % ("*"*sev, source, line))
-	sys.stdout.flush()
-#SIGTERM handler; could be expanded to handle SIGKILL, SIGHUP, SIGUSR1, etc.
-#TODO: handle SIGHUP or SIGUSR1 for live-relaoding playlist
+#Generic signal handler
 def sighandle(_signo, _stack_frame):
-	global mainloop
-	olog(1, "sighandler", "caught signal %s" % _signo)
+	global state
+	Log(1, "sighandler", "caught signal %s" % _signo)
 	if _signo == 1:
 		#SIGHUP
-		olog(1, "sighandler", "SIGHUP handled, reloading playlist")
-		loadplaylist()
+		Log(1, "sighandler", "SIGHUP invoked playlist reload")
+		MediaLoadPlaylist()
 	elif _signo == 2:
 		#SIGINT
-		olog(1, "sighandler", "SIGINT handled, hanging up all calls")
-		pj.Lib.instance().hangup_all()
+		Log(1, "sighandler", "SIGINT invoked current call flush")
+		state.lib.hangup_all()
 	elif _signo == 15:
 		#SIGTERM
-		olog(1, "sighandler", "SIGTERM handled, closing main loop")
-		mainloop=False
+		Log(1, "sighandler", "SIGTERM invoked app shutdown")
+		state.running=False
 	pass
 
 # Classes
@@ -72,9 +76,10 @@ class AccountCb(pj.AccountCallback):
 		pj.AccountCallback.__init__(self, account)
 
 	def on_incoming_call(self, call):
-		olog(2, "event-call-in", "caller %s dialled in" % call.info().remote_uri)
+		Log(2, "event-call-in", "caller %s dialled in" % call.info().remote_uri)
 		call.set_callback(CallCb(call))
-		#brief delay between ringing and connected means we can do playlist setup without a period of silence
+		#Answer call with SIP/2.0 180 RINGING
+		#This kicks in the EARLY media state, allowing us to initialise the playlist before the call connects
 		call.answer(SIPStates.ringing)
 # Call Callback class
 class CallCb(pj.CallCallback):
@@ -82,151 +87,132 @@ class CallCb(pj.CallCallback):
 		pj.CallCallback.__init__(self, call)
 
 	def on_state(self):
-		olog(3, "event-state-change", "SIP/2.0 %s (%s), call %s in call with party %s" % 
+		global state
+		Log(2, "event-state-change", "SIP/2.0 %s (%s), call %s in call with party %s" % 
 			(self.call.info().last_code, self.call.info().last_reason,
 			self.call.info().state_text, self.call.info().remote_uri))
-		#call states not handled so far: CONNECTING
+		#EARLY media state allows us to init the playlist while the call establishes
 		if self.call.info().state == pj.CallState.EARLY:
-			global files
-			self.playlist=files
+			self.playlist=state.playlist
 			shuffle(self.playlist)
-			self.playlist_instance=pj.Lib.instance().create_playlist(
+			self.instmedia=state.lib.create_playlist(
 				loop=True, filelist=self.playlist, label="trashtalklist")
-			self.playlistslot=pj.Lib.instance().playlist_get_slot(self.playlist_instance)
-			olog(4, "event-call-state-early", "initialised new trashtalk playlist instance")
+			self.slotmedia=state.lib.playlist_get_slot(self.instmedia)
+			Log(3, "event-call-state-early", "initialised new trashtalk playlist instance")
 			#answer the call once playlist is prepared
 			self.call.answer(SIPStates.answer)
+		#CONFIRMED state indicates the call is connected
 		elif self.call.info().state == pj.CallState.CONFIRMED:
-			olog(3, "event-call-state-confirmed", "answered call")
-			self.confslot=self.call.info().conf_slot
-			pj.Lib.instance().conf_connect(self.playlistslot, self.confslot)
-			olog(3, "event-call-conf-joined", "joined trashtalk to call")
+			Log(3, "event-call-state-confirmed", "answered call")
+			self.slotcall=self.call.info().conf_slot
+			state.lib.conf_connect(self.slotmedia, self.slotcall)
+			Log(3, "event-call-conf-joined", "joined trashtalk to call")
+		#DISCONNECTED state indicates the call has ended (whether on our end or the caller's)
 		elif self.call.info().state == pj.CallState.DISCONNECTED:
-			olog(3, "event-call-state-disconnected", "call disconnected")
-			pj.Lib.instance().conf_disconnect(self.playlistslot, self.confslot)
-			pj.Lib.instance().playlist_destroy(self.playlist_instance)
-			olog(3, "event-call-conf-left", "removed trashtalk instance from call and destroyed it")
+			Log(3, "event-call-state-disconnected", "call disconnected")
+			state.lib.conf_disconnect(self.slotmedia, self.slotcall)
+			state.lib.playlist_destroy(self.instmedia)
+			Log(3, "event-call-conf-left", "removed trashtalk instance from call and destroyed it")
 
+	#I'm not sure what this is for, as all media handling is actually done within the SIP events above
 	def on_media_state(self):
 		if self.call.info().media_state == pj.MediaState.ACTIVE:
-			olog(4, "event-media-state-change", "Media State transitioned to ACTIVE")
+			Log(4, "event-media-state-change", "Media State transitioned to ACTIVE")
 		else:
-			olog(4, "event-media-state-change", "Media State transitioned to INACTIVE")
+			Log(4, "event-media-state-change", "Media State transitioned to INACTIVE")
 
 # Main logic functions
-def PjInit():
-	global lib
-	global LOG_LEVEL
-	lib=pj.Lib()
-	cfg_ua=pj.UAConfig()
-	#TODO: make max_calls configurable?
-	cfg_ua.max_calls=32
-	cfg_ua.user_agent="TrashTalker/1.0"
-	cfg_media=pj.MediaConfig()
-	cfg_media.no_vad=True
-	cfg_media.enable_ice=False
-	lib.init(ua_cfg=cfg_ua, media_cfg=cfg_media,
-		log_cfg=pj.LogConfig(level=LOG_LEVEL, callback=pjlog))
-	lib.set_null_snd_dev()
-	lib.start(with_thread=True)
+def PJInit():
+	global state
+	state.lib=pj.Lib()
+	state.cfg_ua=pj.UAConfig()
+	state.cfg_md=pj.MediaConfig()
+	state.cfg_ua.max_calls, state.cfg_ua.user_agent = 32, "TrashTalker/1.0"
+	state.cfg_md.no_vad, state.cfg_md.enable_ice = True, False
+	state.lib.init(
+		ua_cfg=state.cfg_ua,
+		media_cfg=state.cfg_md,
+		log_cfg=pj.LogConfig(
+			level=state.LOG_LEVEL,
+			callback=PJLog
+		)
+	)
+	state.lib.set_null_snd_dev()
+	state.lib.start(with_thread=True)
+	state.transport=state.lib.create_transport(
+		pj.TransportType.UDP,
+		pj.TransportConfig(state.port)
+	)
+	state.account=state.lib.create_account_for_transport(
+		state.transport,
+		cb=AccountCb()
+	)
+	state.uri="sip:%s:%s" % (state.transport.info().host, state.transport.info().port)
 
-def PjMediaInit():
-	global transport
-	global acct
-	global sipuri
-	global sipport
-	global lib
-	transport=lib.create_transport(pj.TransportType.UDP,
-		pj.TransportConfig(sipport))
-	acct=lib.create_account_for_transport(transport, cb=AccountCb())
-	sipuri="sip:%s:%s" % (transport.info().host, transport.info().port)
-
-def TrashTalkerInit():
-	global mainloop
-	while mainloop:
+def WaitLoop():
+	global state
+	while state.running:
 		sleep(0.2)
 
 def PjDeinit():
-	global transport
-	global acct
-	global sipport
-	global lib
-	lib.hangup_all()
+	global state
+	state.lib.hangup_all()
 	# allow time for cleanup before destroying objects
-	lib.handle_events(timeout=250)
+	state.lib.handle_events(timeout=250)
 	try:
-		acct.delete()
-		lib.destroy()
-		lib=None
-		acct=None
-		transport=None
+		state.account.delete()
+		state.lib.destroy()
+		state.lib=state.account=state.transport=None
 	except AttributeError:
-		elog(1, "deinit", "AttributeError when clearing down pjsip, this is likely fine")
+		Log(1, "deinit", "AttributeError when clearing down pjsip, this is likely fine", error=True)
 		pass
 	except pj.Error as e:
-		elog(1, "deinit", "pjsip error when clearing down: %s" % str(e))
+		Log(1, "deinit", "pjsip error when clearing down: %s" % str(e), error=True)
 		pass
 
-def loadplaylist():
-	olog(2, "playlist-load", "loading playlist files")
-	global sourcepath
-	if not sourcepath.endswith('/'):
-		olog(1, "playlist-load", "appending trailing / to TT_MEDIA_SOURCE")
-		sourcepath="%s/" % sourcepath
-	global files
-	files=listdir(sourcepath)
-	files[:]=[sourcepath+file for file in files]
-	assert (len(files) > 1), "playlist path %s must contain more than one audio file" % sourcepath
-	olog(1, "playlist-load",
-		"load playlist from %s, got %s files" % (sourcepath, len(files)))
+def MediaLoadPlaylist():
+	Log(3, "playlist-load", "loading playlist files")
+	global state
+	if not state.source.endswith('/'):
+		Log(4, "playlist-load", "appending trailing / to TT_MEDIA_SOURCE")
+		state.source="%s/" % state.source
+	state.playlist=listdir(state.source)
+	state.playlist[:]=[state.source+file for file in state.playlist]
+	assert (len(state.playlist) > 1), "playlist path %s must contain more than one audio file" % state.source
+	Log(3, "playlist-load",
+		"load playlist from %s, got %s files" % (state.source, len(state.playlist)))
 
 def main():
-	olog(1, "init", "initialising trashtalker")
-	global mainloop
-	global files
-	global sipuri
-	global sourcepath
-	mainloop=True
+	Log(1, "init", "initialising trashtalker")
+	global state
+	state.running=True
 	signal(SIGHUP, sighandle)
 	signal(SIGINT, sighandle)
 	signal(SIGTERM, sighandle)
-	assert sourcepath.startswith('/'), "Environment variable TT_MEDIA_PATH must be an absolute path!"
+	assert state.source.startswith('/'), "Environment variable TT_MEDIA_PATH must be an absolute path!"
 	try:
-		loadplaylist()
+		MediaLoadPlaylist()
 	except:
-		elog(1, "playlist-load", "exception encountered while loading playlist from path %s" % sourcepath)
+		Log(2, "playlist-load", "exception encountered while loading playlist from path %s" % state.source, error=True)
 		raise Exception("Unable to load playlist")
 	try:
-		PjInit()
+		PJInit()
 	except:
-		elog(1, "pj-init", "Unable to initialise pjsip library")
-		raise Exception("Unable to initialise pjsip library")
+		Log(2, "pj-init", "Unable to initialise pjsip library; please check media path and SIP listening port are correct", error=True)
+		raise Exception("Unable to initialise pjsip library; please check media path and SIP listening port are correct")
+	Log(1, "init-complete", "trashtalker listening on uri %s and serving %s media items from %s" % (state.uri, len(state.playlist), state.source))
 	try:
-		PjMediaInit()
-	except:
-		elog(1, "pj-media-init", "Unable to initialise pjsip media or transport")
-		raise Exception("Unable to initialise pjsip media or transport")
-	olog(1, "init-complete", "trashtalker listening on uri %s and serving media from %s" % (sipuri, sourcepath))
-	try:
-		TrashTalkerInit()
+		WaitLoop()
 	except pj.Error as e:
-		elog(1, "pjsip-error", "trashtalker encountered pjsip exception %s" % str(e))
-		mainloop=False
+		Log(2, "pjsip-error", "trashtalker encountered pjsip exception %s" % str(e), error=True)
+		state.running=False
 		pass
 	except KeyboardInterrupt:
-		mainloop=False
+		state.running=False
 		pass
-	olog(1, "deinit", "main loop exited, shutting down")
+	Log(1, "deinit", "main loop exited, shutting down")
 	PjDeinit()
-	olog(1, "deinit-complete", "trashtalker has shut down")
-
-
-lib=None
-acct=None
-transport=None
-sipuri=None
-mainloop=False
-files=()
+	Log(1, "deinit-complete", "trashtalker has shut down")
 
 if __name__ == "__main__":
 	main()
