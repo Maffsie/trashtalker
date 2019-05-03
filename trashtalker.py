@@ -25,6 +25,7 @@ from random import shuffle
 ##
 ## If you can get this working using PJSUA2, a pull request would be greatly appreciated.
 
+state=None
 
 # Application scaffolding
 # logger functions
