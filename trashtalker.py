@@ -25,10 +25,18 @@ from random import shuffle
 ##
 ## If you can get this working using PJSUA2, a pull request would be greatly appreciated.
 
-state=None
-
-# Application scaffolding
-# logger functions
+# Utility classes, used basically as enums or generics
+class State(object):
+	running=False
+class PJStates:
+	init=0
+	deinit=1
+class SIPStates:
+	ringing=180
+	answer=200
+#Utility and state definitions
+state=State()
+# Logging
 def PJLog(level, line, length):
 	Log(level+1, "pjsip", line)
 def Log(level, source, line, error=False):
@@ -37,7 +45,7 @@ def Log(level, source, line, error=False):
 		pfx='!'
 	print("%s %s: %s" % (pfx*level, source, line))
 	sys.stdout.flush()
-#Generic signal handler
+# Signal handling
 def sighandle(_signo, _stack_frame):
 	global state
 	Log(1, "sighandler", "caught signal %s" % _signo)
@@ -54,18 +62,6 @@ def sighandle(_signo, _stack_frame):
 		Log(1, "sighandler", "SIGTERM invoked app shutdown")
 		state.running=False
 	pass
-
-# Utility classes, used basically as enums or generics
-class State(object):
-	running=False
-class PJStates:
-	init=0
-	deinit=1
-class SIPStates:
-	ringing=180
-	answer=200
-
-state=State()
 
 # Classes
 # Account Callback class
