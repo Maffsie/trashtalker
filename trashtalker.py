@@ -25,18 +25,6 @@ from random import shuffle
 ##
 ## If you can get this working using PJSUA2, a pull request would be greatly appreciated.
 
-# This feels real hacky but I'm not sure there's a better way of creating a generic object that
-#   you can add properties to.
-class State(object):
-	pass
-state=State()
-
-# Configuration
-state.LOG_LEVEL=int(getenv('TT_LOG_LEVEL', 0))
-#TT_MEDIA_SOURCE and TT_LISTEN_PORT can be configured via env. variables
-state.source=getenv('TT_MEDIA_SOURCE', '/opt/media/')
-state.port=int(getenv('TT_LISTEN_PORT', 5062))
-# End configuration
 
 # Application scaffolding
 # logger functions
@@ -66,10 +54,19 @@ def sighandle(_signo, _stack_frame):
 		state.running=False
 	pass
 
-# Classes
+# Utility classes, used basically as enums or generics
+class State(object):
+	running=False
+class PJStates:
+	init=0
+	deinit=1
 class SIPStates:
 	ringing=180
 	answer=200
+
+state=State()
+
+# Classes
 # Account Callback class
 class AccountCb(pj.AccountCallback):
 	def __init__(self, account=None):
@@ -122,53 +119,52 @@ class CallCb(pj.CallCallback):
 			Log(4, "event-media-state-change", "Media State transitioned to INACTIVE")
 
 # Main logic functions
-def PJInit():
+def PJControl(action):
 	global state
-	state.lib=pj.Lib()
-	state.cfg_ua=pj.UAConfig()
-	state.cfg_md=pj.MediaConfig()
-	state.cfg_ua.max_calls, state.cfg_ua.user_agent = 32, "TrashTalker/1.0"
-	state.cfg_md.no_vad, state.cfg_md.enable_ice = True, False
-	state.lib.init(
-		ua_cfg=state.cfg_ua,
-		media_cfg=state.cfg_md,
-		log_cfg=pj.LogConfig(
-			level=state.LOG_LEVEL,
-			callback=PJLog
+	if action == PJStates.init:
+		state.lib=pj.Lib()
+		state.cfg_ua=pj.UAConfig()
+		state.cfg_md=pj.MediaConfig()
+		state.cfg_ua.max_calls, state.cfg_ua.user_agent = 32, "TrashTalker/1.0"
+		state.cfg_md.no_vad, state.cfg_md.enable_ice = True, False
+		state.lib.init(
+			ua_cfg=state.cfg_ua,
+			media_cfg=state.cfg_md,
+			log_cfg=pj.LogConfig(
+				level=state.LOG_LEVEL,
+				callback=PJLog
+			)
 		)
-	)
-	state.lib.set_null_snd_dev()
-	state.lib.start(with_thread=True)
-	state.transport=state.lib.create_transport(
-		pj.TransportType.UDP,
-		pj.TransportConfig(state.port)
-	)
-	state.account=state.lib.create_account_for_transport(
-		state.transport,
-		cb=AccountCb()
-	)
-	state.uri="sip:%s:%s" % (state.transport.info().host, state.transport.info().port)
+		state.lib.set_null_snd_dev()
+		state.lib.start(with_thread=True)
+		state.transport=state.lib.create_transport(
+			pj.TransportType.UDP,
+			pj.TransportConfig(state.port)
+		)
+		state.account=state.lib.create_account_for_transport(
+			state.transport,
+			cb=AccountCb()
+		)
+		state.uri="sip:%s:%s" % (state.transport.info().host, state.transport.info().port)
+	elif action == PJStates.deinit:
+		state.lib.hangup_all()
+		# allow time for cleanup before destroying objects
+		state.lib.handle_events(timeout=250)
+		try:
+			state.account.delete()
+			state.lib.destroy()
+			state.lib=state.account=state.transport=None
+		except AttributeError:
+			Log(1, "deinit", "AttributeError when clearing down pjsip, this is likely fine", error=True)
+			pass
+		except pj.Error as e:
+			Log(1, "deinit", "pjsip error when clearing down: %s" % str(e), error=True)
+			pass
 
 def WaitLoop():
 	global state
 	while state.running:
 		sleep(0.2)
-
-def PjDeinit():
-	global state
-	state.lib.hangup_all()
-	# allow time for cleanup before destroying objects
-	state.lib.handle_events(timeout=250)
-	try:
-		state.account.delete()
-		state.lib.destroy()
-		state.lib=state.account=state.transport=None
-	except AttributeError:
-		Log(1, "deinit", "AttributeError when clearing down pjsip, this is likely fine", error=True)
-		pass
-	except pj.Error as e:
-		Log(1, "deinit", "pjsip error when clearing down: %s" % str(e), error=True)
-		pass
 
 def MediaLoadPlaylist():
 	Log(3, "playlist-load", "loading playlist files")
@@ -183,8 +179,12 @@ def MediaLoadPlaylist():
 		"load playlist from %s, got %s files" % (state.source, len(state.playlist)))
 
 def main():
-	Log(1, "init", "initialising trashtalker")
 	global state
+	Log(1, "init", "initialising trashtalker")
+	state.LOG_LEVEL=int(getenv('TT_LOG_LEVEL', 0))
+	#TT_MEDIA_SOURCE and TT_LISTEN_PORT can be configured via env. variables
+	state.source=getenv('TT_MEDIA_SOURCE', '/opt/media/')
+	state.port=int(getenv('TT_LISTEN_PORT', 55060))
 	state.running=True
 	signal(SIGHUP, sighandle)
 	signal(SIGINT, sighandle)
@@ -196,7 +196,7 @@ def main():
 		Log(2, "playlist-load", "exception encountered while loading playlist from path %s" % state.source, error=True)
 		raise Exception("Unable to load playlist")
 	try:
-		PJInit()
+		PJControl(PJStates.init)
 	except:
 		Log(2, "pj-init", "Unable to initialise pjsip library; please check media path and SIP listening port are correct", error=True)
 		raise Exception("Unable to initialise pjsip library; please check media path and SIP listening port are correct")
@@ -211,7 +211,7 @@ def main():
 		state.running=False
 		pass
 	Log(1, "deinit", "main loop exited, shutting down")
-	PjDeinit()
+	PJControl(PJStates.deinit)
 	Log(1, "deinit-complete", "trashtalker has shut down")
 
 if __name__ == "__main__":
