@@ -1,8 +1,12 @@
 #!/usr/bin/python2.7
 import sys
+#It shouldn't be a surprise that pjsua wouldn't be available on the local machine.
+#pylint: disable=import-error
 import pjsua as pj
 from time import sleep
 from os import listdir, getenv
+#It also shouldn't be a surprise that certain members of the signal library wouldn't be available on certain OSes (Windows).
+#pylint: disable=no-name-in-module
 from signal import signal, SIGHUP, SIGINT, SIGTERM
 from random import shuffle
 
