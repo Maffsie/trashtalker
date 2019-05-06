@@ -25,13 +25,18 @@ from random import shuffle
 ## Please also be aware that, by default, playlist length is limited to 64 items. I can find no reason
 ##   for this limitation, and it is specific to the python bindings for the PJSUA library.
 ## If you'd like to have a playlist longer than 64 items, you will need to recompile python-pjsua
-##   with the appropriate adjustment to _pjsua.c line 2515
+##   with the appropriate adjustment to pjsip-apps/src/python/_pjsua.c line 2515, in the definition for
+##   PyObject py_pjsua_playlist_create(self, args): pj_str_t files[64];
+##   A possible idea would be to make this configurable.
 ##
 ## If you can get this working using PJSUA2, a pull request would be greatly appreciated.
 
 # Utility classes, used basically as enums or generics
-class State(object):
+class State:
+	lib=None
 	running=False
+	def stop(self):
+		self.running=False
 class PJStates:
 	init=0
 	deinit=1
@@ -64,7 +69,7 @@ def sighandle(_signo, _stack_frame):
 	elif _signo == 15:
 		#SIGTERM
 		Log(1, "sighandler", "SIGTERM invoked app shutdown")
-		state.running=False
+		state.stop()
 	pass
 
 # Classes
@@ -111,6 +116,10 @@ class CallCb(pj.CallCallback):
 			state.lib.conf_disconnect(self.slotmedia, self.slotcall)
 			state.lib.playlist_destroy(self.instmedia)
 			Log(3, "event-call-conf-left", "removed trashtalk instance from call and destroyed it")
+
+	def on_dtmf_digit(self, digit):
+		global state
+		Log(2, "dtmf-digit", "received DTMF digit(s) %s" % digit)
 
 	#I'm not sure what this is for, as all media handling is actually done within the SIP events above
 	def on_media_state(self):
@@ -206,10 +215,10 @@ def main():
 		WaitLoop()
 	except pj.Error as e:
 		Log(2, "pjsip-error", "trashtalker encountered pjsip exception %s" % str(e), error=True)
-		state.running=False
+		state.stop()
 		pass
 	except KeyboardInterrupt:
-		state.running=False
+		state.stop()
 		pass
 	Log(1, "deinit", "main loop exited, shutting down")
 	PJControl(PJStates.deinit)
