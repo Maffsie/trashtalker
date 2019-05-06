@@ -96,19 +96,23 @@ class CallCb(pj.CallCallback):
 		self.instmedia=state.lib.create_playlist(
 			loop=True, filelist=self.playlist, label="trashtalklist")
 		self.slotmedia=state.lib.playlist_get_slot(self.instmedia)
+		Log(4, "call-media-create", "created playlist for current call")
 	def connect_media(self):
 		global state
 		self.slotcall=self.call.info().conf_slot
 		state.lib.conf_connect(self.slotmedia, self.slotcall)
+		Log(4, "call-media-connect", "connected playlist media endpoint to call")
 	def disconnect_media(self):
 		global state
 		state.lib.conf_disconnect(self.slotmedia, self.slotcall)
+		Log(4, "call-media-disconnect", "disconnected playlist media endpoint from call")
 	def destroy_media(self):
 		global state
 		state.lib.playlist_destroy(self.instmedia)
 		self.instmedia=None
 		self.slotmedia=None
 		self.playlist=None
+		Log(4, "call-media-destroy", "destroyed playlist endpoint and object")
 
 	def on_state(self):
 		global state
