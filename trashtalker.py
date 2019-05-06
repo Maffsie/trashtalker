@@ -35,6 +35,8 @@ from random import shuffle
 class State:
 	lib=None
 	running=False
+	def start(self):
+		self.running=True
 	def stop(self):
 		self.running=False
 class PJStates:
@@ -220,7 +222,7 @@ def main():
 	#TT_MEDIA_SOURCE and TT_LISTEN_PORT can be configured via env. variables
 	state.source=getenv('TT_MEDIA_SOURCE', '/opt/media/')
 	state.port=int(getenv('TT_LISTEN_PORT', 55060))
-	state.running=True
+	state.start()
 	signal(SIGHUP, sighandle)
 	signal(SIGINT, sighandle)
 	signal(SIGTERM, sighandle)
