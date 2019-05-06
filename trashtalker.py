@@ -91,9 +91,9 @@ class CallCb(pj.CallCallback):
 
 	def create_media(self):
 		global state
-		self.playlist=playlist
+		self.playlist=state.playlist
 		shuffle(self.playlist)
-		self.instmedia=state.lib.create(playlist
+		self.instmedia=state.lib.create(self.playlist,
 			loop=True, filelist=self.playlist, label="trashtalklist")
 		self.slotmedia=state.lib.playlist_get_slot(self.instmedia)
 	def connect_media(self):
