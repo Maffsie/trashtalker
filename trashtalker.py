@@ -89,6 +89,27 @@ class CallCb(pj.CallCallback):
 	def __init__(self, call=None):
 		pj.CallCallback.__init__(self, call)
 
+	def create_media(self):
+		global state
+		self.playlist=playlist
+		shuffle(self.playlist)
+		self.instmedia=state.lib.create(playlist
+			loop=True, filelist=self.playlist, label="trashtalklist")
+		self.slotmedia=state.lib.playlist_get_slot(self.instmedia)
+	def connect_media(self):
+		global state
+		self.slotcall=self.call.info().conf_slot
+		state.lib.conf_connect(self.slotmedia, self.slotcall)
+	def disconnect_media(self):
+		global state
+		state.lib.conf_disconnect(self.slotmedia, self.slotcall)
+	def destroy_media(self):
+		global state
+		state.lib.playlist_destroy(self.instmedia)
+		self.instmedia=None
+		self.slotmedia=None
+		self.playlist=None
+
 	def on_state(self):
 		global state
 		Log(2, "event-state-change", "SIP/2.0 %s (%s), call %s in call with party %s" % 
@@ -96,30 +117,30 @@ class CallCb(pj.CallCallback):
 			self.call.info().state_text, self.call.info().remote_uri))
 		#EARLY media state allows us to init the playlist while the call establishes
 		if self.call.info().state == pj.CallState.EARLY:
-			self.playlist=state.playlist
-			shuffle(self.playlist)
-			self.instmedia=state.lib.create_playlist(
-				loop=True, filelist=self.playlist, label="trashtalklist")
-			self.slotmedia=state.lib.playlist_get_slot(self.instmedia)
+			self.create_media()
 			Log(3, "event-call-state-early", "initialised new trashtalk playlist instance")
 			#answer the call once playlist is prepared
 			self.call.answer(SIPStates.answer)
 		#CONFIRMED state indicates the call is connected
 		elif self.call.info().state == pj.CallState.CONFIRMED:
 			Log(3, "event-call-state-confirmed", "answered call")
-			self.slotcall=self.call.info().conf_slot
-			state.lib.conf_connect(self.slotmedia, self.slotcall)
+			self.connect_media()
 			Log(3, "event-call-conf-joined", "joined trashtalk to call")
 		#DISCONNECTED state indicates the call has ended (whether on our end or the caller's)
 		elif self.call.info().state == pj.CallState.DISCONNECTED:
 			Log(3, "event-call-state-disconnected", "call disconnected")
-			state.lib.conf_disconnect(self.slotmedia, self.slotcall)
-			state.lib.playlist_destroy(self.instmedia)
+			self.disconnect_media()
+			self.destroy_media()
 			Log(3, "event-call-conf-left", "removed trashtalk instance from call and destroyed it")
 
 	def on_dtmf_digit(self, digit):
 		global state
 		Log(2, "dtmf-digit", "received DTMF digit(s) %s" % digit)
+		if digit == '*':
+			self.disconnect_media()
+			self.destroy_media()
+			self.create_media()
+			self.connect_media()
 
 	#I'm not sure what this is for, as all media handling is actually done within the SIP events above
 	def on_media_state(self):
