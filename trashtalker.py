@@ -139,7 +139,7 @@ class CallCb(pj.CallCallback):
 
 	def on_dtmf_digit(self, digit):
 		global state
-		Log(2, "dtmf-digit", "received DTMF digit(s) %s" % digit)
+		Log(3, "dtmf-digit", "received DTMF signal: %s" % digit)
 		if digit == '*':
 			self.disconnect_media()
 			self.destroy_media()
