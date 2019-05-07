@@ -33,8 +33,14 @@ from random import shuffle
 
 # Utility classes, used basically as enums or generics
 class State:
+	class States:
+		done=1
+		preinit=4
+		media_init=8
+		init=16
 	lib=None
 	running=False
+	status=0
 	sip_ringing=180
 	sip_answer=200
 	def Log(level, source, line, error=False):
@@ -45,11 +51,14 @@ class State:
 		sys.stdout.flush()
 	def preinit(self):
 		self.Log(1, "preinit", "initialising from environment")
+		self.status=States.preinit
 		self.LOG_LEVEL=int(getenv('TT_LOG_LEVEL', 0))
 		self.port=int(getenv('TT_LISTEN_PORT', 55060))
 		self.source=getenv('TT_MEDIA_SOURCE', '/opt/media/')
 		assert self.source.startswith('/'), "TT_MEDIA_SOURCE must specify an absolute path!"
+		self.status&=States.done
 	def init(self):
+		self.status=States.init
 		self.lib=pj.Lib()
 		self.cfg_ua=pj.UAConfig()
 		self.cfg_md=pj.MediaConfig()
@@ -72,8 +81,10 @@ class State:
 			self.transport,
 			cb=AccountCb())
 		self.uri="sip:%s:%s" % (self.transport.info().host, self.transport.info().port)
+		self.status&=States.done
 	def media_init(self):
 		self.Log(3, "playlist-load", "loading playlist files from media path %s" % self.source)
+		self.status=States.media_init
 		if not self.source.endswith('/'):
 			self.Log(4, "playlist-load", "appending trailing / to TT_MEDIA_SOURCE")
 			self.source="%s/" % self.source
@@ -81,7 +92,9 @@ class State:
 		self.playlist[:]=[self.source+file for file in self.playlist]
 		assert (len(self.playlist) > 1), "playlist path %s must contain more than one audio file" % self.source
 		self.Log(3, "playlist-load", "loaded %s media items from path %s" % (len(self.playlist), self.source))
+		self.status&=States.done
 	def deinit(self):
+		assert (self.status==(States.init & States.done)), "State.deinit cannot be called when not fully initialised"
 		self.lib.hangup_all()
 		self.lib.handle_events(timeout=250)
 		try:
@@ -94,12 +107,14 @@ class State:
 		except pj.Error as e:
 			self.Log(1, "deinit", "Got a PJError exception during shutdown: %s" % str(e), error=True)
 			pass
+		self.status=0
 	def run(self):
 		self.running=True
 		while self.running:
 			sleep(0.2)
 	def stop(self):
 		self.running=False
+
 #Utility and state definitions
 state=State()
 # Logging
@@ -213,6 +228,7 @@ def main():
 	#Try to pre-init
 	try:
 		state.preinit()
+		assert (state.status==(State.States.preinit & State.States.done))
 	except AssertionError as e:
 		state.Log(1, "preinit", "AssertionError while pre-initialising: %s" % str(e))
 		raise Exception("Unable to start up TrashTalker. Check all configuration parameters are correct, and review logs.")
@@ -223,12 +239,14 @@ def main():
 	#Try to initialise media
 	try:
 		state.media_init()
+		assert (state.status==(State.States.media_init & State.States.done))
 	except:
 		state.Log(2, "playlist-load", "exception encountered while loading playlist from path %s" % state.source, error=True)
 		raise Exception("Unable to load playlist")
 	#Try to initialise main process; only fault here should be if the configured listening port is unavailable to us
 	try:
 		state.init()
+		assert (state.status==(State.States.init & State.States.done))
 	except:
 		state.Log(2, "pj-init", "Unable to initialise pjsip library; please check media path and SIP listening port are correct", error=True)
 		raise Exception("Unable to initialise pjsip library; please check media path and SIP listening port are correct")
